@@ -1,8 +1,10 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons";
 import { MAX_FILE_SIZE, parseCsv, parseText, type Conversation, type ProcessedData } from "@/lib/conversations";
+import { createDataset, getDatasetStoreMessage, saveCurrentDataset, type DatasetSourceType } from "@/lib/dataset-store";
 
 type FileInfo = { name: string; type: string; size: number };
 const formatSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -15,13 +17,18 @@ export function ImportConversations() {
   const [notice, setNotice] = useState("");
   const [pasteValue, setPasteValue] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [sourceName, setSourceName] = useState("");
+  const [sourceType, setSourceType] = useState<DatasetSourceType>("csv");
+  const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
-  function acceptResult(result: ProcessedData, info: FileInfo | null, successNotice = "") {
+  function acceptResult(result: ProcessedData, info: FileInfo | null, name: string, type: DatasetSourceType, successNotice = "") {
     setData(result); setFileInfo(info); setError("");
+    setSourceName(name); setSourceType(type);
     setNotice(result.excluded ? `${result.excluded.toLocaleString()} additional valid conversations were excluded because this MVP processes a maximum of 5,000.` : successNotice);
   }
-  function clear() { setData(null); setFileInfo(null); setError(""); setNotice(""); if (inputRef.current) inputRef.current.value = ""; }
+  function clear() { setData(null); setFileInfo(null); setError(""); setNotice(""); setSourceName(""); if (inputRef.current) inputRef.current.value = ""; }
   async function processFile(file: File) {
     clear();
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -31,20 +38,32 @@ export function ImportConversations() {
       const text = await file.text();
       if (!text.trim()) throw new Error("The selected file is empty.");
       const result = extension === "csv" ? parseCsv(text) : parseText(text);
-      acceptResult(result, { name: file.name, type: extension === "csv" ? "CSV" : "TXT", size: file.size });
+      acceptResult(result, { name: file.name, type: extension === "csv" ? "CSV" : "TXT", size: file.size }, file.name, extension);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "The file could not be processed."); }
   }
   function onFileChange(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (file) void processFile(file); }
   function onDrop(event: DragEvent<HTMLDivElement>) { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file) void processFile(file); }
-  function processPaste() { clear(); try { acceptResult(parseText(pasteValue), null); } catch (caught) { setError(caught instanceof Error ? caught.message : "The text could not be processed."); } }
+  function processPaste() { clear(); try { acceptResult(parseText(pasteValue), null, "Pasted text", "pasted_text"); } catch (caught) { setError(caught instanceof Error ? caught.message : "The text could not be processed."); } }
   async function loadSample() {
     clear();
     try {
       const response = await fetch("/sample-conversations.csv");
       if (!response.ok) throw new Error("Sample data could not be loaded.");
       const text = await response.text();
-      acceptResult(parseCsv(text), { name: "sample-conversations.csv", type: "CSV sample", size: new Blob([text]).size }, "Sample data loaded successfully.");
+      acceptResult(parseCsv(text), { name: "sample-conversations.csv", type: "CSV sample", size: new Blob([text]).size }, "sample-conversations.csv", "sample", "Sample data loaded successfully.");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Sample data could not be loaded."); }
+  }
+
+  async function continueToAnalysis() {
+    if (!data?.conversations.length || !sourceName || saving) return;
+    setSaving(true); setError("");
+    try {
+      await saveCurrentDataset(createDataset({ name: sourceName, sourceType, conversations: data.conversations }));
+      router.push("/analysis");
+    } catch (caught) {
+      setError(getDatasetStoreMessage(caught));
+      setSaving(false);
+    }
   }
 
   return <div className="mx-auto max-w-[1400px] px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
@@ -60,11 +79,11 @@ export function ImportConversations() {
       </section>
       <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-semibold text-slate-900">Get started quickly</h2><p className="mt-2 text-sm leading-6 text-slate-500">Use fictional sample conversations or download the required CSV structure.</p><button type="button" onClick={() => void loadSample()} className="mt-5 flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">Load Sample Data</button><a href="/conversation-template.csv" download className="mt-3 flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-indigo-600">Download CSV Template</a><div className="mt-5 border-t border-slate-100 pt-5"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Required column</p><code className="mt-2 block rounded-lg bg-slate-100 px-3 py-2 text-xs text-indigo-700">customer_message</code><p className="mt-3 text-xs leading-5 text-slate-500">Optional: conversation_id, date, chatbot_response, channel</p></div></aside>
     </div>
-    {data && <Preview conversations={data.conversations} />}
+    {data && <Preview conversations={data.conversations} saving={saving} onContinue={() => void continueToAnalysis()} />}
   </div>;
 }
 
-function Preview({ conversations }: { conversations: Conversation[] }) {
+function Preview({ conversations, saving, onContinue }: { conversations: Conversation[]; saving: boolean; onContinue: () => void }) {
   const rows = conversations.slice(0, 10);
-  return <section className="mt-6 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><div className="flex items-center gap-2 text-emerald-700"><span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-100"><Icon name="check" className="h-4 w-4" /></span><p className="text-sm font-semibold">Dataset ready for analysis</p></div><h2 className="mt-3 text-lg font-semibold text-slate-950">Conversation preview</h2><p className="mt-1 text-sm text-slate-500">Showing the first {rows.length} of {conversations.length.toLocaleString()} valid conversations.</p></div><div className="sm:text-right"><button type="button" disabled className="min-h-11 cursor-not-allowed rounded-xl bg-slate-200 px-5 text-sm font-semibold text-slate-500">Continue to Analysis</button><p className="mt-1.5 text-xs text-slate-500">Available in the next phase</p></div></div><div className="w-full overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">ID</th><th className="px-5 py-3 font-semibold">Customer Message</th><th className="px-5 py-3 font-semibold">Chatbot Response</th><th className="px-5 py-3 font-semibold">Date</th><th className="px-5 py-3 font-semibold">Channel</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row, index) => <tr key={`${row.id}-${index}`} className="align-top"><td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-slate-500">{row.id}</td><td className="max-w-md px-5 py-4 leading-6 text-slate-800">{row.customerMessage}</td><td className="max-w-sm px-5 py-4 leading-6 text-slate-500">{row.chatbotResponse || "—"}</td><td className="whitespace-nowrap px-5 py-4 text-slate-500">{row.date || "—"}</td><td className="whitespace-nowrap px-5 py-4 text-slate-500">{row.channel || "—"}</td></tr>)}</tbody></table></div></section>;
+  return <section className="mt-6 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><div className="flex items-center gap-2 text-emerald-700"><span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-100"><Icon name="check" className="h-4 w-4" /></span><p className="text-sm font-semibold">Dataset ready for analysis</p></div><h2 className="mt-3 text-lg font-semibold text-slate-950">Conversation preview</h2><p className="mt-1 text-sm text-slate-500">Showing the first {rows.length} of {conversations.length.toLocaleString()} valid conversations.</p></div><div className="sm:text-right"><button type="button" onClick={onContinue} disabled={saving || conversations.length === 0} className="min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-wait disabled:bg-indigo-300">{saving ? "Saving dataset…" : "Continue to Analysis"}</button><p className="mt-1.5 text-xs text-slate-500">Saves this dataset on your device</p></div></div><div className="w-full overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">ID</th><th className="px-5 py-3 font-semibold">Customer Message</th><th className="px-5 py-3 font-semibold">Chatbot Response</th><th className="px-5 py-3 font-semibold">Date</th><th className="px-5 py-3 font-semibold">Channel</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row, index) => <tr key={`${row.id}-${index}`} className="align-top"><td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-slate-500">{row.id}</td><td className="max-w-md px-5 py-4 leading-6 text-slate-800">{row.customerMessage}</td><td className="max-w-sm px-5 py-4 leading-6 text-slate-500">{row.chatbotResponse || "—"}</td><td className="whitespace-nowrap px-5 py-4 text-slate-500">{row.date || "—"}</td><td className="whitespace-nowrap px-5 py-4 text-slate-500">{row.channel || "—"}</td></tr>)}</tbody></table></div></section>;
 }
