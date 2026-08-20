@@ -1,0 +1,13 @@
+conversation_id,date,customer_message,chatbot_response,channel
+NOVA-1001,2026-07-02,"My NovaStride X1 shoes were due on Monday, but the tracking has not changed for four days.","I am sorry about the delay. Please use the carrier tracking link, and contact support if there is no update within 24 hours.",web_chat
+NOVA-1002,2026-07-05,"I ordered size 42, but the NovaStride X1 feels much smaller than my other running shoes.","You can request a free size exchange within the return period. The fit guide may also help you choose the replacement size.",chatbot
+NOVA-1003,2026-07-08,"My card was charged twice when I bought the NovaStride X1.","The second charge may be a temporary authorization. If it remains after three business days, please contact billing support.",web_chat
+NOVA-1004,2026-07-11,"The step-tracking sensor in my right shoe will not connect to the mobile app.","Please charge both sensor modules, enable Bluetooth, and restart the NovaStride app before pairing again.",in_app_chat
+NOVA-1005,2026-07-14,"The replaceable insole becomes uncomfortable after about thirty minutes of running.","We recommend checking that the insole is fully seated. You may also request the alternative comfort insole at no extra cost.",email
+NOVA-1006,2026-07-18,"I returned the shoes two weeks ago, but my refund has still not arrived.","Refunds are normally completed within ten business days after inspection. Support can check the return status for you.",web_chat
+NOVA-1007,2026-07-22,"I selected midnight blue, but the pair I received is bright white.","We apologize for the incorrect color. You can arrange a free replacement through the returns page.",chatbot
+NOVA-1008,2026-07-26,"The RUN20 promotional code is valid today, but checkout says it cannot be applied.","Please confirm that the order meets the promotion conditions. If it does, customer support can review the discount issue.",web_chat
+NOVA-1009,2026-07-30,"The outer sole started separating near the heel after only six runs.","That is not expected. Please submit a warranty request with photos so the quality team can assess the shoes.",email
+NOVA-1010,2026-08-03,"The size exchange was quick, and the replacement NovaStride X1 fits perfectly.","We are glad the replacement fits well. Thank you for sharing your experience.",chatbot
+NOVA-1011,2026-08-07,"These shoes are light, comfortable, and supportive on longer runs.","Thank you for the positive feedback. We hope the NovaStride X1 continues to support your training.",in_app_chat
+NOVA-1012,2026-08-12,"Support helped me reconnect both sensors, and the step tracking now works correctly.","We are happy the issue was resolved. Please contact us again if you need any further assistance.",web_chat
