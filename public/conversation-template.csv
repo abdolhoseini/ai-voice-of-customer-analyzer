@@ -1,0 +1,2 @@
+conversation_id,date,customer_message,chatbot_response,channel
+EXAMPLE-001,2026-08-01,"Replace this example with a customer message.","Optional chatbot response",web_chat
