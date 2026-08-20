@@ -8,7 +8,7 @@ import { Icon, type IconName } from "./icons";
 const navigation: { label: string; icon: IconName; href?: string }[] = [
   { label: "Dashboard", icon: "dashboard", href: "/" },
   { label: "Import Data", icon: "import", href: "/import" },
-  { label: "Analysis Results", icon: "analysis" },
+  { label: "Analysis Results", icon: "analysis", href: "/analysis" },
   { label: "Insights", icon: "insights" },
   { label: "Reports", icon: "reports" },
 ];
