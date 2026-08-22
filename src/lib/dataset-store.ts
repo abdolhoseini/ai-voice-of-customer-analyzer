@@ -1,9 +1,11 @@
 import type { Conversation } from "@/lib/conversations";
+import { ANALYSIS_MODEL, isAnalysisResult, type AnalysisResult } from "@/lib/analysis";
 
 const DATABASE_NAME = "voice-of-customer-analyzer";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "datasets";
 const CURRENT_DATASET_KEY = "current";
+const CURRENT_ANALYSIS_KEY = "current-analysis";
 
 export type DatasetSourceType = "csv" | "txt" | "pasted_text" | "sample";
 
@@ -14,6 +16,15 @@ export type StoredDataset = {
   importedAt: string;
   conversationCount: number;
   conversations: Conversation[];
+};
+
+export type StoredAnalysis = {
+  datasetId: string;
+  datasetName: string;
+  conversationCount: number;
+  analyzedAt: string;
+  model: typeof ANALYSIS_MODEL;
+  result: AnalysisResult;
 };
 
 export type DatasetStoreOperation = "open" | "read" | "write" | "delete";
@@ -85,13 +96,33 @@ function runRequest<T>(operation: DatasetStoreOperation, mode: IDBTransactionMod
   }));
 }
 
+function runWrite(operation: "write" | "delete", action: (store: IDBObjectStore) => void): Promise<void> {
+  return openDatabase().then((database) => new Promise<void>((resolve, reject) => {
+    let transaction: IDBTransaction;
+    try {
+      transaction = database.transaction(STORE_NAME, "readwrite");
+      action(transaction.objectStore(STORE_NAME));
+    } catch (cause) {
+      database.close();
+      reject(new DatasetStoreError(messageFor(operation, cause instanceof DOMException ? cause : undefined), operation, { cause }));
+      return;
+    }
+    transaction.oncomplete = () => { database.close(); resolve(); };
+    transaction.onabort = () => { database.close(); reject(new DatasetStoreError(messageFor(operation, transaction.error ?? undefined), operation, { cause: transaction.error })); };
+    transaction.onerror = () => { /* onabort reports the final transaction error */ };
+  }));
+}
+
 export function createDataset(input: Pick<StoredDataset, "name" | "sourceType" | "conversations">): StoredDataset {
   const conversations = input.conversations.map((conversation) => ({ ...conversation }));
   return { id: crypto.randomUUID(), name: input.name, sourceType: input.sourceType, importedAt: new Date().toISOString(), conversationCount: conversations.length, conversations };
 }
 
 export async function saveCurrentDataset(dataset: StoredDataset): Promise<void> {
-  await runRequest("write", "readwrite", (store) => store.put(dataset, CURRENT_DATASET_KEY));
+  await runWrite("write", (store) => {
+    store.put(dataset, CURRENT_DATASET_KEY);
+    store.delete(CURRENT_ANALYSIS_KEY);
+  });
 }
 
 export async function getCurrentDataset(): Promise<StoredDataset | null> {
@@ -99,7 +130,48 @@ export async function getCurrentDataset(): Promise<StoredDataset | null> {
 }
 
 export async function clearCurrentDataset(): Promise<void> {
-  await runRequest("delete", "readwrite", (store) => store.delete(CURRENT_DATASET_KEY));
+  await runWrite("delete", (store) => {
+    store.delete(CURRENT_DATASET_KEY);
+    store.delete(CURRENT_ANALYSIS_KEY);
+  });
+}
+
+export function createStoredAnalysis(dataset: StoredDataset, result: AnalysisResult): StoredAnalysis {
+  return {
+    datasetId: dataset.id,
+    datasetName: dataset.name,
+    conversationCount: dataset.conversations.length,
+    analyzedAt: new Date().toISOString(),
+    model: ANALYSIS_MODEL,
+    result,
+  };
+}
+
+export async function saveCurrentAnalysis(analysis: StoredAnalysis): Promise<void> {
+  await runWrite("write", (store) => { store.put(analysis, CURRENT_ANALYSIS_KEY); });
+}
+
+export async function clearCurrentAnalysis(): Promise<void> {
+  await runWrite("delete", (store) => { store.delete(CURRENT_ANALYSIS_KEY); });
+}
+
+export async function getCurrentAnalysis(dataset: StoredDataset): Promise<StoredAnalysis | null> {
+  const value: unknown = await runRequest("read", "readonly", (store) => store.get(CURRENT_ANALYSIS_KEY));
+  if (isStoredAnalysisForDataset(value, dataset)) return value;
+  if (value !== undefined) await clearCurrentAnalysis().catch(() => undefined);
+  return null;
+}
+
+function isStoredAnalysisForDataset(value: unknown, dataset: StoredDataset): value is StoredAnalysis {
+  if (!value || typeof value !== "object") return false;
+  const analysis = value as Record<string, unknown>;
+  return analysis.datasetId === dataset.id
+    && analysis.datasetName === dataset.name
+    && analysis.conversationCount === dataset.conversations.length
+    && analysis.model === ANALYSIS_MODEL
+    && typeof analysis.analyzedAt === "string"
+    && Number.isFinite(Date.parse(analysis.analyzedAt))
+    && isAnalysisResult(analysis.result, dataset.conversations.length);
 }
 
 export function getDatasetStoreMessage(error: unknown): string {

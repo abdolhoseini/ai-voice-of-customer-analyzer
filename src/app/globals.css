@@ -21,3 +21,48 @@ body {
 html {
   scroll-behavior: smooth;
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  body {
+    background: white;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body > div > header,
+  body > div > aside,
+  .no-print {
+    display: none !important;
+  }
+
+  body > div > div {
+    margin-left: 0 !important;
+  }
+
+  .print-report {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .report-cover {
+    padding: 12mm 10mm !important;
+  }
+
+  .report-metadata,
+  .report-card,
+  .report-theme {
+    break-inside: avoid;
+  }
+
+  .report-section {
+    orphans: 3;
+    widows: 3;
+  }
+}
