@@ -27,6 +27,8 @@ export type StoredAnalysis = {
   result: AnalysisResult;
 };
 
+export type StoredAnalysisLookup = { status: "missing" } | { status: "invalid" } | { status: "matching"; analysis: StoredAnalysis };
+
 export type DatasetStoreOperation = "open" | "read" | "write" | "delete";
 
 export class DatasetStoreError extends Error {
@@ -156,10 +158,16 @@ export async function clearCurrentAnalysis(): Promise<void> {
 }
 
 export async function getCurrentAnalysis(dataset: StoredDataset): Promise<StoredAnalysis | null> {
+  const lookup = await getCurrentAnalysisLookup(dataset);
+  return lookup.status === "matching" ? lookup.analysis : null;
+}
+
+export async function getCurrentAnalysisLookup(dataset: StoredDataset): Promise<StoredAnalysisLookup> {
   const value: unknown = await runRequest("read", "readonly", (store) => store.get(CURRENT_ANALYSIS_KEY));
-  if (isStoredAnalysisForDataset(value, dataset)) return value;
+  if (value === undefined) return { status: "missing" };
+  if (isStoredAnalysisForDataset(value, dataset)) return { status: "matching", analysis: value };
   if (value !== undefined) await clearCurrentAnalysis().catch(() => undefined);
-  return null;
+  return { status: "invalid" };
 }
 
 function isStoredAnalysisForDataset(value: unknown, dataset: StoredDataset): value is StoredAnalysis {
