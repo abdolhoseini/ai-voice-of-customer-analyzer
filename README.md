@@ -1,45 +1,156 @@
 # AI Voice of Customer Analyzer
 
-A portfolio-focused Next.js application for importing customer conversations, running a structured Gemini analysis, reviewing ranked insights, and creating local reports.
+Turn customer conversation exports into a structured, evidence-backed view of sentiment, recurring themes, and recommended actions. This portfolio application covers the complete workflow—from browser-based CSV/TXT import and validation to server-side Gemini analysis, locally persisted dashboards and insights, and spreadsheet-safe or print-ready reports.
 
-Conversation datasets and saved analysis results are stored in the browser with IndexedDB. CSV exports and printable reports are generated locally. Gemini is contacted only when a user explicitly runs analysis.
+**[Open the live demo](https://ai-voice-of-customer-analyzer.vercel.app)**
 
-## Local development
+> Portfolio demonstration only. The public demo has no authentication and is not intended for production or sensitive data. Use only fictional or anonymized conversations.
+
+## Core features
+
+- Import CSV or TXT files, paste text, or load the included fictional sample dataset.
+- Validate and normalize conversation records before continuing.
+- Save the current dataset and its matching validated analysis in browser IndexedDB.
+- Run structured Gemini analysis for an overall summary, sentiment totals, themes, evidence, severity, and recommended actions.
+- Review a live dashboard with deterministic theme ranking and safely rounded sentiment percentages.
+- Convert saved model output into a filtered, evidence-backed Actionable Insights queue.
+- Generate local reports with formula-injection-safe CSV download and print/save-as-PDF support.
+- Detect and remove corrupted or dataset-mismatched saved analyses instead of displaying stale results.
+
+## End-to-end workflow
+
+1. Import and validate customer conversations on the **Import Data** page.
+2. Save the normalized dataset to browser IndexedDB and open **Analysis Results**.
+3. Explicitly run AI analysis; the selected conversations travel through the server-only API route to Google Gemini.
+4. Validate the structured provider response and save the matching result back to IndexedDB.
+5. Explore local views in **Dashboard**, **Actionable Insights**, and **Reports**.
+6. Download a CSV report or use the browser print dialog to save a PDF locally.
+
+## Screenshots
+
+All screenshots use the included fictional NovaStride dataset and a schema-valid fictional analysis.
+
+### Dashboard
+
+<img src="docs/screenshots/dashboard.png" alt="Live customer insights dashboard using fictional NovaStride conversations" width="960">
+
+### Actionable Insights
+
+<img src="docs/screenshots/insights.png" alt="Ranked actionable insights using fictional NovaStride analysis themes" width="960">
+
+### Reports
+
+<img src="docs/screenshots/reports.png" alt="Local analysis report for the fictional NovaStride dataset" width="960">
+
+## Technology stack
+
+- Next.js 16 App Router and React 19
+- TypeScript
+- Tailwind CSS 4
+- Google Gen AI SDK (`@google/genai`)
+- Native browser IndexedDB
+- Papa Parse for CSV parsing
+- Vercel deployment
+
+## Architecture
+
+```text
+CSV / TXT / pasted text / sample
+              │
+              ▼
+    Browser validation and normalization
+              │
+              ▼
+      IndexedDB: current dataset
+              │
+       explicit “Run Analysis”
+              │
+              ▼
+ Next.js POST /api/analyze (server only)
+              │
+              ▼
+       Google Gemini structured JSON
+              │
+     server + client validation
+              ▼
+ IndexedDB: matching saved analysis
+              │
+      ┌───────┼──────────┐
+      ▼       ▼          ▼
+ Dashboard  Insights   Reports / exports
+```
+
+The Gemini API key is accessed only by the server-only Gemini module. Dashboard, Insights, Reports, CSV generation, PDF printing, matching checks, sorting, filtering, and percentage calculations run locally without another provider request.
+
+## Local installation
 
 Requirements: Node.js and npm.
 
-1. Copy `.env.example` to `.env.local`.
-2. Add a Gemini API key to `GEMINI_API_KEY` in `.env.local`.
-3. Install dependencies with `npm install`.
-4. Start the app with `npm run dev`.
-5. Open [http://localhost:3000](http://localhost:3000).
+From a local checkout of this repository:
 
-Do not prefix the key with `NEXT_PUBLIC_`. The application reads `GEMINI_API_KEY` only inside the server-only Gemini module.
+```bash
+cd ai-voice-of-customer-analyzer
+npm install
+```
 
-## Deploying to Vercel
+Create `.env.local` in the repository root:
 
-Import the repository into Vercel and add `GEMINI_API_KEY` under Project Settings → Environment Variables for each environment that should support analysis. Do not commit `.env.local` or any real key.
+```dotenv
+GEMINI_API_KEY=your_gemini_api_key
+```
 
-The application includes an in-memory limit of five `/api/analyze` requests per client per minute. This reduces casual bursts on a warm function instance, but it is **not production-grade abuse prevention**: Vercel can run multiple isolated serverless instances, and counters reset on cold starts or deployments. A serious public service would need platform-level protection or a shared rate-limit store.
+Never prefix this variable with `NEXT_PUBLIC_`, and never commit `.env.local`.
 
-## Public demo privacy limitation
-
-Imports, saved datasets, saved analysis results, dashboards, insights, reports, and exports remain in the visitor's browser. However, when a visitor selects **Run AI Analysis**, the chosen conversation records are sent to this application's Vercel server and then to Google Gemini for processing. Visitors should use fictional, anonymized, or otherwise non-sensitive data and should not submit confidential, regulated, or personally identifiable information to a public portfolio deployment.
-
-The project has no authentication or shared application database. A public deployment should be presented as a portfolio demonstration, not as a protected production workspace.
-
-## Available workflows
-
-- Import CSV, TXT, pasted text, or fictional sample conversations.
-- Save the current dataset and matching analysis locally with IndexedDB.
-- Review Analysis Results, Dashboard metrics, Actionable Insights, and Reports.
-- Download a spreadsheet-safe CSV report or print/save the report as PDF.
-- Run structured analysis through the server-only Gemini integration.
-
-## Commands
+Start the development server:
 
 ```bash
 npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Useful checks are:
+
+```bash
 npm run lint
 npm run build
 ```
+
+## Deploying to Vercel
+
+1. Import the repository into Vercel.
+2. Add `GEMINI_API_KEY` in **Project Settings → Environment Variables** for each desired deployment environment.
+3. Deploy using the detected Next.js settings.
+4. Confirm the import workflow and `/api/analyze` using fictional data.
+
+No additional database or paid infrastructure is required for this portfolio deployment.
+
+## Fictional sample dataset
+
+[`public/sample-conversations.csv`](public/sample-conversations.csv) contains 12 fictional NovaStride X1 support conversations across web chat, chatbot, in-app chat, and email. It covers delivery, sizing, billing, sensor pairing, comfort, refunds, order accuracy, promotions, durability, successful exchanges, and positive product feedback. Load it from the Import page or download it directly from the repository.
+
+## Privacy and security boundaries
+
+- Imported datasets and saved analyses remain in the visitor's browser IndexedDB.
+- Selected conversations are sent through the application server to Google Gemini only when the visitor explicitly runs analysis.
+- Reports, CSV files, and print/PDF exports are generated locally in the browser.
+- `GEMINI_API_KEY` remains server-only and API errors are sanitized.
+- Analysis requests have conversation-count and text-size limits, non-cacheable responses, and an in-memory burst limiter.
+- Security headers restrict framing, MIME sniffing, referrer leakage, and unnecessary browser capabilities.
+- The public demo has no authentication. Use only fictional or anonymized data; never submit credentials, confidential records, regulated data, or personally identifiable information.
+
+## Known limitations
+
+- This is a portfolio demonstration and is not suitable for production use.
+- There are no user accounts, roles, access controls, or shared workspaces.
+- IndexedDB data is specific to the current browser profile and origin and can be cleared by the browser or visitor.
+- AI results are not guaranteed to be complete or correct and should be reviewed by a person.
+- The in-memory rate limiter is instance-local. It resets on cold starts or deployments and is not shared across Vercel serverless instances, so it is not production-grade abuse prevention.
+- PDF output relies on the browser's print/save-as-PDF capability rather than a dedicated PDF renderer.
+
+## Verification
+
+The repository is verified with:
+
+- ESLint via `npm run lint`
+- Next.js production compilation and TypeScript checks via `npm run build`
+- Browser-level tests for IndexedDB persistence, dataset matching, dashboard calculations, insight ranking and filters, report rendering, CSV escaping/formula protection, and print layout
+- Real server-route smoke testing with fictional conversations, including structured response validation and HTTP 429 behavior
