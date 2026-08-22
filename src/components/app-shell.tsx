@@ -10,7 +10,7 @@ const navigation: { label: string; icon: IconName; href?: string }[] = [
   { label: "Import Data", icon: "import", href: "/import" },
   { label: "Analysis Results", icon: "analysis", href: "/analysis" },
   { label: "Insights", icon: "insights" },
-  { label: "Reports", icon: "reports" },
+  { label: "Reports", icon: "reports", href: "/reports" },
 ];
 
 function Brand() {

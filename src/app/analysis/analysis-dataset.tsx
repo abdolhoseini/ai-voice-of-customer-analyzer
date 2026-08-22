@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
 import { isAnalysisResult, type AnalysisResult, type AnalysisTheme } from "@/lib/analysis";
-import { clearCurrentDataset, getCurrentDataset, getDatasetStoreMessage, type StoredDataset } from "@/lib/dataset-store";
+import { clearCurrentDataset, createStoredAnalysis, getCurrentAnalysis, getCurrentDataset, getDatasetStoreMessage, saveCurrentAnalysis, type StoredDataset } from "@/lib/dataset-store";
 
 type ViewState = { status: "loading" } | { status: "empty" } | { status: "error"; message: string } | { status: "loaded"; dataset: StoredDataset };
-type AnalysisState = { status: "ready" } | { status: "analyzing" } | { status: "success"; result: AnalysisResult } | { status: "error"; kind: "validation" | "rate-limit" | "provider"; message: string };
+type AnalysisState = { status: "ready" } | { status: "analyzing" } | { status: "success"; result: AnalysisResult; analyzedAt: string; savedLocally: boolean } | { status: "error"; kind: "validation" | "rate-limit" | "provider"; message: string };
 
 export function AnalysisDataset() {
   const [state, setState] = useState<ViewState>({ status: "loading" });
@@ -18,13 +18,20 @@ export function AnalysisDataset() {
     try {
       const dataset = await getCurrentDataset();
       setState(dataset ? { status: "loaded", dataset } : { status: "empty" });
-      setAnalysis({ status: "ready" });
+      if (!dataset) { setAnalysis({ status: "ready" }); return; }
+      const saved = await getCurrentAnalysis(dataset).catch(() => null);
+      setAnalysis(saved ? { status: "success", result: saved.result, analyzedAt: saved.analyzedAt, savedLocally: true } : { status: "ready" });
     } catch (error) { setState({ status: "error", message: getDatasetStoreMessage(error) }); }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    getCurrentDataset().then((dataset) => { if (!cancelled) setState(dataset ? { status: "loaded", dataset } : { status: "empty" }); }).catch((error: unknown) => { if (!cancelled) setState({ status: "error", message: getDatasetStoreMessage(error) }); });
+    getCurrentDataset().then(async (dataset) => {
+      if (cancelled) return;
+      if (!dataset) { setState({ status: "empty" }); return; }
+      const saved = await getCurrentAnalysis(dataset).catch(() => null);
+      if (!cancelled) { setState({ status: "loaded", dataset }); setAnalysis(saved ? { status: "success", result: saved.result, analyzedAt: saved.analyzedAt, savedLocally: true } : { status: "ready" }); }
+    }).catch((error: unknown) => { if (!cancelled) setState({ status: "error", message: getDatasetStoreMessage(error) }); });
     return () => { cancelled = true; };
   }, []);
 
@@ -51,7 +58,13 @@ export function AnalysisDataset() {
         setAnalysis({ status: "error", kind: "provider", message: "The analysis response was incomplete. Run the analysis again." });
         return;
       }
-      setAnalysis({ status: "success", result: payload });
+      const stored = createStoredAnalysis(dataset, payload);
+      try {
+        await saveCurrentAnalysis(stored);
+        setAnalysis({ status: "success", result: payload, analyzedAt: stored.analyzedAt, savedLocally: true });
+      } catch {
+        setAnalysis({ status: "success", result: payload, analyzedAt: stored.analyzedAt, savedLocally: false });
+      }
     } catch { setAnalysis({ status: "error", kind: "provider", message: "The analysis service could not be reached. Check your connection and try again." }); }
   }
 
@@ -82,7 +95,7 @@ export function AnalysisDataset() {
       {analysis.status === "ready" && <ReadyState />}
       {analysis.status === "analyzing" && <AnalyzingState count={dataset.conversationCount} />}
       {analysis.status === "error" && <AnalysisError state={analysis} onRetry={() => void runAnalysis(dataset)} />}
-      {analysis.status === "success" && <AnalysisResults result={analysis.result} />}
+      {analysis.status === "success" && <AnalysisResults result={analysis.result} analyzedAt={analysis.analyzedAt} savedLocally={analysis.savedLocally} />}
     </div>
   </div>;
 }
@@ -103,10 +116,11 @@ function AnalysisError({ state, onRetry }: { state: Extract<AnalysisState, { sta
   return <section role="alert" className="mt-6 rounded-2xl border border-rose-200 bg-white p-5 shadow-sm sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-600">{state.kind === "validation" ? "Validation error" : "Analysis error"}</p><h2 className="mt-2 text-lg font-semibold text-slate-950">{heading}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-rose-700">{state.message}</p><button type="button" onClick={onRetry} className="mt-5 min-h-11 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">Try Analysis Again</button></section>;
 }
 
-function AnalysisResults({ result }: { result: AnalysisResult }) {
+function AnalysisResults({ result, analyzedAt, savedLocally }: { result: AnalysisResult; analyzedAt: string; savedLocally: boolean }) {
   const sentiments = [{ label: "Positive", value: result.sentimentSummary.positive, classes: "border-emerald-200 bg-emerald-50 text-emerald-800" }, { label: "Neutral", value: result.sentimentSummary.neutral, classes: "border-slate-200 bg-slate-50 text-slate-700" }, { label: "Negative", value: result.sentimentSummary.negative, classes: "border-rose-200 bg-rose-50 text-rose-800" }];
+  const analysisDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(analyzedAt));
   return <section className="mt-6" aria-labelledby="analysis-results-heading">
-    <div className="rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm sm:p-7"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">Analysis complete</p><h2 id="analysis-results-heading" className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">Voice of customer summary</h2><p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300 sm:text-base">{result.overallSummary}</p></div>
+    <div className="rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm sm:p-7"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">Analysis complete</p><p className={`text-xs ${savedLocally ? "text-emerald-300" : "text-amber-300"}`}>{savedLocally ? `Saved locally · ${analysisDate}` : `Analyzed ${analysisDate} · Local save failed`}</p></div><h2 id="analysis-results-heading" className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">Voice of customer summary</h2><p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300 sm:text-base">{result.overallSummary}</p></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-3">{sentiments.map((item) => <div key={item.label} className={`rounded-2xl border p-5 ${item.classes}`}><p className="text-xs font-semibold uppercase tracking-[0.14em] opacity-75">{item.label}</p><p className="mt-2 text-3xl font-semibold tracking-tight">{item.value.toLocaleString()}</p><p className="mt-1 text-xs opacity-75">conversations</p></div>)}</div>
     <div className="mt-8 flex items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-indigo-600">Recurring signals</p><h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">Customer themes</h3></div><p className="text-sm text-slate-500">{result.themes.length} {result.themes.length === 1 ? "theme" : "themes"}</p></div>
     {result.themes.length ? <div className="mt-4 grid gap-4 xl:grid-cols-2">{result.themes.map((theme, index) => <ThemeCard key={`${theme.name}-${index}`} theme={theme} />)}</div> : <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No recurring themes were identified in this dataset.</div>}

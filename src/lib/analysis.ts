@@ -19,6 +19,8 @@ export type AnalysisResult = {
   themes: AnalysisTheme[];
 };
 
+export const ANALYSIS_MODEL = "gemini-3.5-flash";
+
 const severities = new Set<AnalysisTheme["severity"]>(["low", "medium", "high", "critical"]);
 
 function isNonEmptyString(value: unknown): value is string {
