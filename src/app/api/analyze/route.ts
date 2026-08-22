@@ -1,6 +1,6 @@
-import { ApiError } from "@google/genai";
 import type { Conversation } from "@/lib/conversations";
-import { analyzeConversations, GeminiConfigurationError, GeminiResponseError } from "@/lib/gemini";
+import { checkAnalyzeRateLimit } from "@/lib/analyze-rate-limit";
+import { analyzeConversations, GeminiConfigurationError, GeminiProviderError, GeminiResponseError } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 
@@ -39,10 +39,20 @@ function validateRequestBody(value: unknown): ValidationResult {
 }
 
 function errorResponse(message: string, status: number, headers?: HeadersInit) {
-  return Response.json({ error: message }, { status, headers });
+  return Response.json({ error: message }, {
+    status,
+    headers: { "Cache-Control": "no-store", ...headers },
+  });
 }
 
 export async function POST(request: Request) {
+  const rateLimit = checkAnalyzeRateLimit(request);
+  if (!rateLimit.allowed) {
+    return errorResponse("Too many analysis requests. Please try again later.", 429, {
+      "Retry-After": String(rateLimit.retryAfterSeconds),
+    });
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -55,11 +65,12 @@ export async function POST(request: Request) {
 
   try {
     const analysis = await analyzeConversations(validation.conversations);
-    return Response.json(analysis);
+    return Response.json(analysis, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof GeminiConfigurationError) return errorResponse("Analysis service is not configured.", 503);
-    if (error instanceof ApiError && error.status === 429) return errorResponse("Analysis rate limit reached. Please try again later.", 429, { "Retry-After": "60" });
+    if (error instanceof GeminiProviderError && error.rateLimited) return errorResponse("Analysis rate limit reached. Please try again later.", 429, { "Retry-After": "60" });
     if (error instanceof GeminiResponseError) return errorResponse("The analysis provider returned an invalid response. Please try again.", 502);
-    return errorResponse("The analysis provider is currently unavailable. Please try again later.", 502);
+    if (error instanceof GeminiProviderError) return errorResponse("The analysis provider is currently unavailable. Please try again later.", 502);
+    return errorResponse("An unexpected analysis error occurred. Please try again later.", 500);
   }
 }
